@@ -1,0 +1,373 @@
+---
+title: DS8002 - Machine Learning Project 2 - Unsupervised and Supervised Learning (December 2016)
+author: "Najlis, Bernardo"
+date: "December 2nd, 2016"
+output: pdf_document
+---
+
+This is the R code, illustrations and examples that go together with the report for DS8002 - Project 2.
+
+## 0 - Data Preparation
+
+Load required libraries, data sets, split train and test sets, label sets, etc.
+
+```{r}
+library(ggplot2)
+library(e1071)
+library(caret)
+library(randomForest)
+library(RWeka)
+library(NbClust)
+library(rpart)
+library(partykit)
+
+data(iris)  #load iris data
+nrow(iris)
+head(iris)
+iris.data <- iris[, 1:4]  # features
+iris.class <- iris[, 5] # labels
+
+ind.iris <- sample(2, nrow(iris), replace=TRUE, prob=c(0.67, 0.33)) # get random indices for training / test split
+iris.training <- iris[ind.iris==1,1:4]                              # get training set
+iris.trainingWithLabels <- iris[ind.iris==1,]                       # training set with labels
+iris.test <- iris[ind.iris==2,]                                     # get test set
+iris.trainLabels <- iris[ind.iris==1, 5]                            # get labels for training 
+iris.testLabels <- iris[ind.iris==2, 5]                             # get labels for set
+
+lenses <- read.table("lenses.data", # name of file reading, this requires setting the working directory to current file and have file in same directory as rmd file
+                     header= FALSE, # header is not included in first line
+                     col.names =    # to provide names for columns
+                       c("id", "age", "spectacle_prescription", "astigmatic", "tear_production_rate", "class"), # column names
+                     colClasses=    # data types for columns
+                       c("NULL",    # as first column is specified as "NULL", read.table will skip this column (row id, which is not to be used)
+                         rep("integer", 4), # all other attributes are integer
+                          "factor"          # the last column is the class, typified as factor
+                         ))
+nrow(lenses)
+head(lenses)
+lenses.data <- lenses[, 1:4]
+lenses.class <- lenses[, 5]
+
+ind.lenses <- sample(2, nrow(lenses), replace=TRUE, prob=c(0.8, 0.2)) # get random indices for training / test split
+lenses.training <- lenses[ind.lenses==1,1:4]                            # get training set
+lenses.trainingWithLabels <- lenses[ind.lenses==1,]                     # training set with labels
+lenses.test <- lenses[ind.lenses==2,]                                   # get test set
+lenses.trainLabels <- lenses[ind.lenses==1, 5]                          # get labels for training 
+lenses.testLabels <- lenses[ind.lenses==2, 5]                           # get labels for set
+```
+
+## 1 - SVM
+
+Run SVM with different kernels and then compare.
+
+### Iris
+```{r}
+# First use tune to select best model parameters
+
+iris.svm.linear.tuned <- tune.svm(Species~.,                             # class and features
+                                  data=iris.trainingWithLabels,          # data frame
+                                  kernel="linear",                       # kernel
+                                  cost=c(0.001, 0.01, 0.1, 1, 10, 100)   # parameter values to try models with
+                                  )
+
+iris.svm.linear.tuned <- tune.svm(Species~.,                             # class and features
+                                  data=iris.trainingWithLabels,                    # data frame
+                                  kernel="linear",                       # kernel
+                                  cost=c(0.001, 0.01, 0.1, 1, 10, 100)   # parameter values to try models with
+                                  )
+summary(iris.svm.linear.tuned)
+
+iris.svm.polynomial.tuned <- tune.svm(Species~., data=iris.trainingWithLabels, kernel="polynomial", 
+                                      degree = c(3, 4, 5),              # degree of polynomial
+                                      coef0=c(0.1, 0.5, 1, 2, 3, 4))    # kernel coefficient
+                                      
+summary(iris.svm.polynomial.tuned)
+
+iris.svm.radial.tuned <- tune.svm(Species~., data=iris.trainingWithLabels, kernel="radial", 
+                              gamma = c(0.1, 0.5, 1, 2, 3, 4))          # gamma coefficient
+summary(iris.svm.radial.tuned)
+
+iris.svm.sigmoid.tuned <- tune.svm(Species~., data=iris.trainingWithLabels, kernel="sigmoid", 
+                               gamma = c(0.1, 0.5, 1, 2, 3, 4),         # gamma
+                               coef0=c(0.1, 0.5, 1, 2, 3, 4))           # kernel coefficient
+summary(iris.svm.sigmoid.tuned)
+
+# Now use the best model with the best cost as selected by tune()
+
+iris.svm.linear.best <- iris.svm.linear.tuned$best.model
+iris.svm.linear.best.pred <- predict(iris.svm.linear.best, iris.test)
+confusionMatrix(iris.svm.linear.best.pred, iris.testLabels)
+
+iris.svm.polynomial.best <- iris.svm.polynomial.tuned$best.model
+iris.svm.polynomial.best.pred <- predict(iris.svm.polynomial.best, iris.test)
+confusionMatrix(iris.svm.polynomial.best.pred, iris.testLabels)  # Confusion matrix
+
+
+iris.svm.radial.best <- iris.svm.radial.tuned$best.model
+iris.svm.radial.best.pred <- predict(iris.svm.radial.best, iris.test)
+confusionMatrix(iris.svm.radial.best.pred, iris.testLabels)  # Confusion matrix
+
+
+iris.svm.sigmoid.best <- iris.svm.sigmoid.tuned$best.model
+iris.svm.sigmoid.best.pred <- predict(iris.svm.sigmoid.best, iris.test)
+confusionMatrix(iris.svm.sigmoid.best.pred, iris.testLabels)  # Confusion matrix
+
+```
+
+### Contact Lenses
+
+```{r}
+lenses.svm.linear.tuned <- tune.svm(class~., data=lenses.trainingWithLabels, kernel="linear", cost=c(0.001, 0.01, 0.1, 1, 10, 100))
+summary(lenses.svm.linear.tuned)
+
+lenses.svm.polynomial.tuned <- tune.svm(class~., data=lenses.trainingWithLabels, kernel="polynomial", degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+summary(lenses.svm.polynomial.tuned)
+
+lenses.svm.radial.tuned <- tune.svm(class~., data=lenses.trainingWithLabels, kernel="radial", gamma = c(0.1, 0.5, 1, 2, 3, 4))
+summary(lenses.svm.radial.tuned)
+
+lenses.svm.sigmoid.tuned <- tune.svm(class~., data=lenses.trainingWithLabels, kernel="sigmoid", gamma = c(0.1, 0.5, 1, 2, 3, 4), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+summary(lenses.svm.sigmoid.tuned)
+
+# Now create the best model with the best cost as selected by tune()
+
+lenses.svm.linear.best <- lenses.svm.linear.tuned$best.model
+lenses.svm.linear.best.pred <- predict(lenses.svm.linear.best, lenses.test)
+confusionMatrix(lenses.svm.linear.best.pred, lenses.testLabels)  # Confusion matrix
+
+lenses.svm.polynomial.best <- lenses.svm.polynomial.tuned$best.model
+lenses.svm.polynomial.best.pred <- predict(lenses.svm.polynomial.best, lenses.test)
+confusionMatrix(lenses.svm.polynomial.best.pred, lenses.testLabels)  # Confusion matrix
+
+
+lenses.svm.radial.best <- lenses.svm.radial.tuned$best.model
+lenses.svm.radial.best.pred <- predict(lenses.svm.radial.best, lenses.test)
+confusionMatrix(lenses.svm.radial.best.pred, lenses.testLabels)  # Confusion matrix
+
+
+lenses.svm.sigmoid.best <- lenses.svm.sigmoid.tuned$best.model
+lenses.svm.sigmoid.best.pred <- predict(lenses.svm.sigmoid.best, lenses.test)
+confusionMatrix(lenses.svm.sigmoid.best.pred, lenses.testLabels)  # Confusion matrix
+```
+
+## 2 - PCA - SVM
+
+Run PCA and then run SVM on the reduced data.
+
+### Iris
+
+```{r}
+iris.log <- log(iris.data)
+iris.pca <- prcomp(iris.log, center=TRUE, scale. = TRUE) # do PCA analysis on iris data
+summary(iris.pca)             
+
+plot(iris.pca, main="PCA on Iris", type="l")                # plot PCA comparison
+biplot(iris.pca)
+
+# SVM on reduced set
+
+iris.training.reduced <- cbind.data.frame(iris.pca$x[ind.iris==1, c(1,2)], Species=iris.trainLabels) # reduced training set, including only first two PC
+iris.test.reduced <- cbind.data.frame(iris.pca$x[ind.iris==2, c(1,2)], Species=iris.testLabels)#reduced test set, including only first two PC
+
+iris.svm.polynomial.reduced.tuned <- tune.svm(Species~., data=iris.training.reduced, kernel="polynomial",  degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+summary(iris.svm.polynomial.reduced.tuned)
+
+# Now create polynomial SVM with optimal parameters
+
+iris.svm.polynomial.reduced.best <- iris.svm.polynomial.reduced.tuned$best.model
+iris.svm.polynomial.reduced.best.pred <- predict(iris.svm.polynomial.reduced.best, iris.test.reduced)
+
+confusionMatrix(iris.svm.polynomial.reduced.best.pred, iris.testLabels)  # Confusion matrix
+```
+
+### Contact Lenses
+
+```{r}
+lenses.log <- log(lenses.data)
+lenses.pca <- prcomp(lenses.log, center=TRUE, scale. = TRUE) # do PCA analysis on iris data
+summary(lenses.pca)             
+
+
+plot(lenses.pca, main="PCA on Lenses", type="l")                # plot PCA comparison
+biplot(lenses.pca)
+
+lenses.training.reduced <- cbind.data.frame(lenses.pca$x[ind.lenses==1, c(1,2,3)], class=lenses.trainLabels) # reduced training set, including only first two PC
+lenses.test.reduced <- cbind.data.frame(lenses.pca$x[ind.lenses==2, c(1,2, 3)], class=lenses.testLabels)#reduced test set, including only first two PC
+
+lenses.svm.polynomial.reduced.tuned <- tune.svm(class~., data=lenses.training.reduced, kernel="polynomial",  degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+summary(lenses.svm.polynomial.reduced.tuned)
+
+# Now create polynomial SVM with optimal parameters
+
+lenses.svm.polynomial.reduced.best <- lenses.svm.polynomial.reduced.tuned$best.model
+lenses.svm.polynomial.reduced.best.pred <- predict(lenses.svm.polynomial.reduced.best, lenses.test.reduced)
+
+confusionMatrix(lenses.svm.polynomial.reduced.best.pred, lenses.testLabels)  # Confusion matrix
+
+```
+
+## 3 - Random Forest
+
+How did the boosting or bagging compare to the J48 results from Project 1?
+
+### Iris
+
+```{r}
+set.seed(1234)
+iris.rf <- randomForest(Species~., data=iris.trainingWithLabels)
+print(iris.rf)
+
+plot(iris.rf, main="Error rate vs Number of Trees")
+
+which.min(iris.rf$err.rate[,1])     # this returns how mamy trees are needed 
+
+iris.rf.ntree <- randomForest(Species~., data=iris.trainingWithLabels, 
+                              ntree = which.min(iris.rf$err.rate[,1]) ) # specify the number of trees to use
+
+print(iris.rf.ntree)
+iris.rf.ntree.pred <- predict(iris.rf.ntree, newdata = iris.test)
+confusionMatrix(iris.rf.ntree.pred, iris.testLabels)
+
+# J48 (from Project 1) to compare with Random Forest
+
+weka_j48 <- make_Weka_classifier("weka/classifiers/trees/J48")
+# non-prunned version of J48 tree
+iris.j48 <- weka_j48(Species~., data=iris.trainingWithLabels, control=Weka_control(U=TRUE))
+evaluate_Weka_classifier(iris.j48, newdata = iris.test, class=TRUE)
+
+```
+
+### Contact Lenses
+```{r}
+
+set.seed(1234)
+lenses.rf <- randomForest(class~., data=lenses.trainingWithLabels)
+print(lenses.rf)
+
+plot(lenses.rf, main="Error rate vs Number of Trees")
+
+which.min(lenses.rf$err.rate[,1])     # this returns how mamy trees are needed 
+
+lenses.rf.ntree <- randomForest(class~., data=lenses.trainingWithLabels, 
+                              ntree = which.min(lenses.rf$err.rate[,1]) ) # specify the number of trees to use
+
+print(lenses.rf.ntree)
+lenses.rf.ntree.pred <- predict(lenses.rf.ntree, newdata = lenses.test)
+confusionMatrix(lenses.rf.ntree.pred, lenses.testLabels)
+
+# J48 (from Project 1) to compare with Random Forest
+
+weka_j48 <- make_Weka_classifier("weka/classifiers/trees/J48")
+# non-prunned version of J48 tree
+lenses.j48 <- weka_j48(class~., data=lenses, control=Weka_control(U=TRUE))
+evaluate_Weka_classifier(lenses.j48, numFolds = 3, class=TRUE)
+
+```
+
+
+## 4 - Clustering (k-means) / Decision Tree / SVM
+
+Run clustering (k-means) ant then apply decision tree and SVM on clustered data.
+
+### Iris
+
+```{r}
+NbClust(iris.data,         # using the complete set with no labels
+        min.nc = 2,        # minimum number of clusters
+        max.nc = 10,       # maximum number of clusters
+        method = "kmeans")
+
+## Two centroids 
+
+iris.kmeans.2 <- kmeans(iris.data, centers = 2) # two centroids as suggested by NbClust
+iris.with.kmeans.2 <- cbind.data.frame(iris, Cluster = iris.kmeans.2$cluster) # add cluster feature
+iris.with.kmeans.2.training = iris.with.kmeans.2[ind.iris==1,]
+iris.with.kmeans.2.test = iris.with.kmeans.2[ind.iris==2,]
+
+## Decision tree on clustered data
+iris.kmeans.2.dtree <- rpart(Species~., data = iris.with.kmeans.2.training)
+plot(as.party(iris.kmeans.2.dtree))
+
+## SVM on clustered data
+
+# tune svm once more
+iris.kmeans.2.svm.polynomial.tuned <- tune.svm(Species~., data=iris.with.kmeans.2.training, kernel="polynomial", degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+# select best model
+iris.kmeans.2.svm.polynomial.best <- iris.kmeans.2.svm.polynomial.tuned$best.model  
+iris.kmeans.2.svm.polynomial.best.pred <- predict(iris.kmeans.2.svm.polynomial.best, iris.with.kmeans.2.test)
+
+confusionMatrix(iris.kmeans.2.svm.polynomial.best.pred, iris.testLabels)  # Confusion matrix
+
+## Three centroids 
+
+iris.kmeans.3 = kmeans(iris.data, centers = 3) # three centroids as data is really 3 classes
+iris.with.kmeans.3 <- cbind.data.frame(iris.data, Cluster = iris.kmeans.3$cluster)
+
+iris.with.kmeans.3 <- cbind.data.frame(iris, Cluster = iris.kmeans.3$cluster) # add cluster feature
+iris.with.kmeans.3.training = iris.with.kmeans.3[ind.iris==1,]
+iris.with.kmeans.3.test = iris.with.kmeans.3[ind.iris==2,]
+
+## Decision tree on clustered data
+iris.kmeans.3.dtree <- rpart(Species~., data = iris.with.kmeans.3.training)
+plot(as.party(iris.kmeans.3.dtree))
+
+
+## SVM on clustered data
+
+# tune svm once more
+iris.kmeans.3.svm.polynomial.tuned <- tune.svm(Species~., data=iris.with.kmeans.3.training, kernel="polynomial", degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+# select best model
+iris.kmeans.3.svm.polynomial.best <- iris.kmeans.3.svm.polynomial.tuned$best.model  
+iris.kmeans.3.svm.polynomial.best.pred <- predict(iris.kmeans.3.svm.polynomial.best, iris.with.kmeans.3.test)
+
+confusionMatrix(iris.kmeans.3.svm.polynomial.best.pred, iris.testLabels)  # Confusion matrix
+
+
+```
+
+### Contact Lenses
+
+```{r}
+## Can't apply NbClust for this dataset, will use 2 and 3 centroids as with iris
+## Two centroids
+lenses.kmeans.2 <- kmeans(lenses.data, centers = 2)
+lenses.with.kmeans.2 <- cbind.data.frame(lenses, cluster=lenses.kmeans.2$cluster)
+lenses.with.kmeans.2.training = lenses.with.kmeans.2[ind.lenses==1,]
+lenses.with.kmeans.2.test = lenses.with.kmeans.2[ind.lenses==2,]
+
+## Decision tree on clustered data
+lenses.kmeans.2.dtree <- rpart(class~., data = lenses.with.kmeans.2.training)
+plot(as.party(lenses.kmeans.2.dtree))
+
+## SVM on clustered data
+
+# tune svm once more
+lenses.kmeans.2.svm.polynomial.tuned <- tune.svm(class~., data=lenses.with.kmeans.2.training, kernel="polynomial", degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+# select best model
+lenses.kmeans.2.svm.polynomial.best <- lenses.kmeans.2.svm.polynomial.tuned$best.model  
+lenses.kmeans.2.svm.polynomial.best.pred <- predict(lenses.kmeans.2.svm.polynomial.best, lenses.with.kmeans.2.test)
+
+confusionMatrix(lenses.kmeans.2.svm.polynomial.best.pred, lenses.testLabels)  # Confusion matrix
+
+
+## Three centroids
+lenses.kmeans.3 <- kmeans(lenses.data, centers = 3)
+lenses.with.kmeans.3 <- cbind.data.frame(lenses, cluster=lenses.kmeans.3$cluster)
+lenses.with.kmeans.3.training = lenses.with.kmeans.3[ind.lenses==1,]
+lenses.with.kmeans.3.test = lenses.with.kmeans.3[ind.lenses==2,]
+
+## Decision tree on clustered data
+lenses.kmeans.3.dtree <- rpart(class~., data = lenses.with.kmeans.3.training)
+plot(as.party(lenses.kmeans.3.dtree))
+
+## SVM on clustered data
+# tune svm once more
+lenses.kmeans.3.svm.polynomial.tuned <- tune.svm(class~., data=lenses.with.kmeans.3.training, kernel="polynomial", degree = c(3, 4, 5), coef0=c(0.1, 0.5, 1, 2, 3, 4))
+# select best model
+lenses.kmeans.3.svm.polynomial.best <- lenses.kmeans.3.svm.polynomial.tuned$best.model  
+lenses.kmeans.3.svm.polynomial.best.pred <- predict(lenses.kmeans.3.svm.polynomial.best, lenses.with.kmeans.3.test)
+
+confusionMatrix(lenses.kmeans.3.svm.polynomial.best.pred, lenses.testLabels)  # Confusion matrix
+
+
+```

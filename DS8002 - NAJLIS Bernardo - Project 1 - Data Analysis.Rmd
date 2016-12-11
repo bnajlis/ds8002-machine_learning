@@ -1,0 +1,452 @@
+---
+title: DS8002 - Machine Learning Project 1 - Datas set classification analysis (October
+  2016)
+author: "Najlis, Bernardo"
+date: "October 28, 2016"
+output: pdf_document
+---
+
+This is the R code, illustrations and examples that go together with the report for DS8002 - Project 1.
+
+# KNN on the Contact Lens Data
+
+1. First install and load libraries used to run KNN.
+
+```{r}
+if ( ! any(grepl("RWeka" , installed.packages()))) install.packages("RWeka", dependencies=TRUE)
+if ( ! any(grepl("ggplot2" , installed.packages()))) install.packages("ggplot2", dependencies=TRUE)
+library("RWeka")
+library("ggplot2")
+```
+
+This loads the data file from "lenses.data". Parameters specify the column names and data types. Also, sample set of the first rows.
+
+```{r}
+lenses <- read.table("lenses.data", # name of file reading, this requires setting the working directory to current file and have file in same directory as rmd file
+                     header= FALSE, # header is not included in first line
+                     col.names =    # to provide names for columns
+                       c("id", "age", "spectacle_prescription", "astigmatic", "tear_production_rate", "class"), # column names
+                     colClasses=    # data types for columns
+                       c("NULL",    # as first column is specified as "NULL", read.table will skip this column (row id, which is not to be used)
+                         rep("integer", 4), # all other attributes are integer
+                          "factor"          # the last column is the class, typified as factor
+                         ))
+head(lenses)
+```
+
+Now we set knn to be the desired Weka classifier algorithm (IBk is the class for K nearest neighbors in Weka).
+
+```{r}
+weka_knn <- make_Weka_classifier("weka/classifiers/lazy/IBk")
+```
+
+These lines generate the KNN models for the different values of K (1, 3, 5, 7 and 9). Each model is saved in a different variable to perform comparisons. The first model for KNN 1 has its parameters commented.
+
+```{r}
+
+lenses_knn1_3fold <-weka_knn(class ~., # take the attribute named 'class' as the class, and all others as attributes
+                   data=lenses, # training dataset comes from lenses.training
+                   control=   # control vector is used to pass parameters to Weka
+                     c("-K", 1, # K is number of neighbors in KNN
+                       "-W", 0, # windowSize (windowSize -- Gets the maximum number of instances allowed in the training pool. The addition of new instances above this value will result in old instances being removed. A value of 0 signifies no limit to the number of training instances.)
+                       "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" # nearestNeighborSearchAlgorithm options, includes the distanceFunction and the attributeindices (specifies the range of attributes to act on) where "first-last" means to use all attributes.
+                       ))
+
+lenses_knn3_3fold <- weka_knn(class~., data=lenses, control=c("-K", 3, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+lenses_knn5_3fold <- weka_knn(class~., data=lenses, control=c("-K", 5, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+lenses_knn7_3fold <- weka_knn(class~., data=lenses, control=c("-K", 7, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+lenses_knn9_3fold <- weka_knn(class~., data=lenses, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+```
+
+This displays the confusion matrix and metrics for KNN.
+
+```{r}
+evaluate_Weka_classifier(lenses_knn1_3fold, class=TRUE, numFolds = 3)
+evaluate_Weka_classifier(lenses_knn3_3fold, class=TRUE, numFolds = 3)
+evaluate_Weka_classifier(lenses_knn5_3fold, class=TRUE, numFolds = 3)
+evaluate_Weka_classifier(lenses_knn7_3fold, class=TRUE, numFolds = 3)
+evaluate_Weka_classifier(lenses_knn9_3fold, class=TRUE, numFolds = 3)
+```
+
+### Comparison of different K values for Contact Lens Data
+
+```{r}
+kvalues = c("1","3","5","7","9")
+lenses.accuracies = c(
+  evaluate_Weka_classifier(lenses_knn1_3fold, class=TRUE, numFolds = 3)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses_knn3_3fold, class=TRUE, numFolds = 3)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses_knn5_3fold, class=TRUE, numFolds = 3)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses_knn7_3fold, class=TRUE, numFolds = 3)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses_knn9_3fold, class=TRUE, numFolds = 3)$details['pctCorrect'] / 100
+)
+```
+
+Now we will create a plot, comparing the accuracy for each of the K selected in the different KNN models.
+
+```{r}
+lenses.comparison <- data.frame(K=kvalues,Accuracy=lenses.accuracies)
+ggplot(lenses.comparison, aes(x=K, y=Accuracy)) + geom_bar(stat="identity")
+```
+
+### Comparison with fixed K and different distance functions
+
+We will now set K to a fixed value (in this case, K=9 as it was the least accurate model with euclidean distance calculation) and re-evaluate accuracy using different distance functions (Chebyschev, Filtered, Manhattan and Minkowski).
+
+```{r}
+# Models creation
+
+lenses.knn9.euclidean <- weka_knn(class~., data=lenses, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+lenses.knn9.chebyshev <- weka_knn(class~., data=lenses, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.ChebyshevDistance -R first-last\"" ))
+
+lenses.knn9.filtered <- weka_knn(class~., data=lenses, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.FilteredDistance -R first-last\"" ))
+
+lenses.knn9.manhattan <- weka_knn(class~., data=lenses, control=c("-K", 9 , "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.ManhattanDistance -R first-last\"" ))
+
+lenses.knn9.minkowski <- weka_knn(class~., data=lenses, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.MinkowskiDistance -R first-last\"" ))
+
+# Models evaluation and confusion matrix display
+
+evaluate_Weka_classifier(lenses.knn9.euclidean, numFolds = 3, class=TRUE)
+evaluate_Weka_classifier(lenses.knn9.chebyshev, numFolds = 3, class=TRUE)
+evaluate_Weka_classifier(lenses.knn9.filtered, numFolds = 3, class=TRUE)
+evaluate_Weka_classifier(lenses.knn9.manhattan, numFolds = 3, class=TRUE)
+evaluate_Weka_classifier(lenses.knn9.minkowski, numFolds = 3, class=TRUE)
+```
+
+### Comparison for distance models with Contact Lens Data
+
+```{r}
+distancevalues = c("Euclidean", "Chebyshev", "Filtered", "Manhattan", "Minkowski")
+lenses.accuracies.dist = c(
+  evaluate_Weka_classifier(lenses.knn9.euclidean, numFolds = 3, class=TRUE)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses.knn9.chebyshev, numFolds = 3, class=TRUE)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses.knn9.filtered, numFolds = 3, class=TRUE)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses.knn9.manhattan, numFolds = 3, class=TRUE)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(lenses.knn9.minkowski, numFolds = 3, class=TRUE)$details['pctCorrect'] / 100
+)
+```
+
+
+Now we will create a plot, comparing the accuracy for each of the different distance calculations selected in the  KNN models.
+
+```{r}
+lenses.comparison.dist <- data.frame(Distances=distancevalues,Accuracy=lenses.accuracies.dist)
+ggplot(lenses.comparison.dist, aes(x=Distances, y=Accuracy)) + geom_bar(stat="identity")
+```
+
+##KNN on the Iris data set
+
+This loads the data file from "iris.data". Parameters specify the column names and data types. Also, sample set of the first rows.
+
+```{r}
+iris <- read.csv("iris.data", # name of file reading, this requires setting the working directory to current file and have file in same directory as rmd file 
+                 header=FALSE, # header is not included in first line
+                   col.names= # to provide names for columns
+                   c("sepal_length", "sepal_width", "petal_length", "petal_width", "class"), # column names
+                 colClasses= # data types for columns
+                   c(rep("double", 4), #all attributes are double
+                     "factor") # with exception of label/class which is factor
+                 )
+
+head(iris)
+```
+
+Now we set knn to be the desired Weka classifier algorithm (IBk is the class for K nearest neighbors in Weka).
+
+```{r}
+weka_knn <- make_Weka_classifier("weka/classifiers/lazy/IBk")
+```
+
+These generate the KNN models for the different values of K (1, 3, 5, 7 and 9). Each model is saved in a different variable to perform comparisons. The first model for KNN 1 has its parameters commented.
+
+```{r}
+
+iris_knn1_10fold <-weka_knn(class ~., # take the attribute named 'class' as the class, and all others as attributes
+                   data=iris, # training dataset comes from iris.training
+                   control=   # control vector is used to pass parameters to Weka
+                     c("-K", 1, # K is number of neighbors in KNN
+                       "-W", 0, # windowSize (windowSize -- Gets the maximum number of instances allowed in the training pool. The addition of new instances above this value will result in old instances being removed. A value of 0 signifies no limit to the number of training instances.)
+                       "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" # nearestNeighborSearchAlgorithm options, includes the distanceFunction and the attributeindices (specifies the range of attributes to act on) where "first-last" means to use all attributes.
+                       ))
+
+iris_knn3_10fold <- weka_knn(class~., data=iris, control=c("-K", 3, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+iris_knn5_10fold <- weka_knn(class~., data=iris, control=c("-K", 5, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+iris_knn7_10fold <- weka_knn(class~., data=iris, control=c("-K", 7, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+iris_knn9_10fold <- weka_knn(class~., data=iris, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+```
+
+### Evaluation of KNN on Iris Data
+
+This displays the confusion matrix and metrics for KNN.
+
+```{r}
+evaluate_Weka_classifier(iris_knn1_10fold, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris_knn3_10fold, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris_knn5_10fold, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris_knn7_10fold, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris_knn9_10fold, class=TRUE, numFolds = 10)
+```
+
+### Comparison of different K values for Iris Data
+
+```{r}
+kvalues = c("1","3","5","7","9")
+iris.accuracies = c(
+  evaluate_Weka_classifier(iris_knn1_10fold, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris_knn3_10fold, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris_knn5_10fold, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris_knn7_10fold, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris_knn9_10fold, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100
+)
+```
+ 
+Now we will create a plot, comparing the accuracy for each of the K selected in the different KNN models.
+
+```{r}
+iris.comparison <- data.frame(K=kvalues,Accuracy=iris.accuracies)
+ggplot(iris.comparison, aes(x=K, y=Accuracy)) + geom_bar(stat="identity")
+
+```
+
+### Comparison with fixed K and different distance functions
+
+We will now set K to a fixed value (in this case, K=9 as it was the least accurate model with euclidean distance calculation) and re-evaluate accuracy using different distance functions (Chebyshev, Filtered, Manhattan and Minkowski).
+
+```{r}
+# Models creation
+
+iris.knn9.euclidean <- weka_knn(class~., data=iris, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.EuclideanDistance -R first-last\"" ))
+
+iris.knn9.chebyshev <- weka_knn(class~., data=iris, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.ChebyshevDistance -R first-last\"" ))
+
+iris.knn9.filtered <- weka_knn(class~., data=iris, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.FilteredDistance -R first-last\"" ))
+
+iris.knn9.manhattan <- weka_knn(class~., data=iris, control=c("-K", 9 , "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.ManhattanDistance -R first-last\"" ))
+
+iris.knn9.minkowski <- weka_knn(class~., data=iris, control=c("-K", 9, "-W", 0, "-A", "weka.core.neighboursearch.LinearNNSearch -A \"weka.core.MinkowskiDistance -R first-last\"" ))
+
+# Models evaluation and confusion matrix display
+
+evaluate_Weka_classifier(iris.knn9.euclidean, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris.knn9.chebyshev, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris.knn9.filtered, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris.knn9.manhattan, class=TRUE, numFolds = 10)
+evaluate_Weka_classifier(iris.knn9.minkowski, class=TRUE, numFolds = 10)
+```
+
+### Comparison for distance models with Iris Data
+
+```{r}
+distancevalues = c("Euclidean", "Chebyshev", "Filtered", "Manhattan", "Minkowski")
+iris.accuracies.dist = c(
+  evaluate_Weka_classifier(iris.knn9.euclidean, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris.knn9.chebyshev, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris.knn9.filtered, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris.knn9.manhattan, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100,
+  evaluate_Weka_classifier(iris.knn9.minkowski, class=TRUE, numFolds = 10)$details['pctCorrect'] / 100
+)
+```
+
+
+Now we will create a plot, comparing the accuracy for each of the different distance calculations selected in the  KNN models.
+
+```{r}
+iris.comparison.dist <- data.frame(Distances=distancevalues,Accuracy=iris.accuracies.dist)
+ggplot(iris.comparison.dist, aes(x=Distances, y=Accuracy)) + geom_bar(stat="identity")
+```
+
+# Decision trees on the Contact Lens data
+
+RWeka doesn't come with ID3 installed by default, so we need to add the additional package. Also, ID3 doesn't take numeric attributes, so we have to reload the data from the data set file and have all attributes as factors.
+
+```{r}
+#if ( any(grepl("simpleEducationalLearningSchemes" , WPM("list-packages", "installed"))))
+#  WPM("install-package", "simpleEducationalLearningSchemes")
+
+WPM("load-package", "simpleEducationalLearningSchemes")
+if ( ! any(grepl("ggvis", installed.packages()))) install.packages("ggvis")
+if ( ! any(grepl("GGally", installed.packages()))) install.packages("GGally")
+library(ggvis)
+library(ggplot2)
+library(GGally)
+```
+
+We load the lenses data in a separate data frame and do some data transformation to adapt all types as factors for the tree algorithms.
+
+```{r}
+lenses2 <- lenses
+
+lenses2$age = as.factor(lenses2$age)
+lenses2$spectacle_prescription = as.factor(lenses2$spectacle_prescription)
+lenses2$astigmatic = as.factor(lenses2$astigmatic)
+lenses2$tear_production_rate = as.factor(lenses2$tear_production_rate)
+
+```
+
+We will identify the tree root using visualization libraries from R.
+
+```{r}
+ggpairs(lenses2, mapping = aes(color = class, shape = age), columns = 1:4, diag = "blank", upper = "blank", legends = F)
+```
+
+For this analysis we will run different types of decision tree algorithms: ID3 and J48.
+
+```{r}
+
+# ID3
+weka_id3 <- make_Weka_classifier("weka/classifiers/trees/Id3")
+
+lenses_id3 <- weka_id3(class~., data=lenses2, control=c("-C", 0.25, "-M", 2))
+evaluate_Weka_classifier(lenses_id3, numFolds = 3, class=TRUE)
+
+# J48
+weka_j48 <- make_Weka_classifier("weka/classifiers/trees/J48")
+
+# non-prunned version of J48 tree
+lenses_j48_nonprunned <- weka_j48(class~., data=lenses2, control=Weka_control(U=TRUE))
+evaluate_Weka_classifier(lenses_j48_nonprunned, numFolds = 3, class=TRUE)
+
+#prunned version of J48 tree
+lenses_j48_prunned <- weka_j48(class~., data=lenses2, control=Weka_control(R=TRUE))
+evaluate_Weka_classifier(lenses_j48_prunned, numFolds = 3, class=TRUE)
+
+```
+
+# Decision trees on the Iris data
+
+Same as with the contact lens data before, we need to convert all attributes from numeric to factors.
+```{r}
+
+iris2 <- iris
+# subset train-test data
+set.seed(1234) # for reproducibility of the sample. change to get different random number to create sample from
+ind1 <- sample(2, nrow(iris2), replace=TRUE, prob=c(0.67, 0.33))
+
+iris2.training <- iris2[ind1==1, 1:4]
+iris2.test <- iris2[ind1==2, 1:4] 
+iris2.trainLabels <- iris2[ind1==1, 5]
+iris2.testLabels <- iris2[ind1==2, 5]
+
+```
+
+First we reload the iris data set, do some data type conversion and identify the node root with R visualization.s
+
+```{r}
+data(iris)
+iris$class= as.integer(as.factor(iris$Species))
+ggpairs(iris, mapping = aes(color = class, shape = Species), columns = 1:4, diag = "blank", upper = "blank", legends = F)
+```
+
+Now we create prunned and unprunned versions of the same J48 tree.
+
+```{r}
+
+# fit models pruned and without prunning
+fit_noprunned <- J48(iris2.trainLabels ~ ., data = iris2.training, control = Weka_control(U=TRUE))
+fit_prunned <- J48(iris2.trainLabels ~ ., data = iris2.training, control = Weka_control(R=TRUE))
+
+#make predictions
+predictions_noprunned <- predict(fit_noprunned, iris2.test)
+predictions_prunned <- predict(fit_prunned, iris2.test)
+
+# summarize accuracy
+evaluate_Weka_classifier(fit_noprunned, class=TRUE)
+evaluate_Weka_classifier(fit_prunned, class=TRUE)
+
+#ploting the decision trees
+plot(fit_noprunned)
+plot(fit_prunned)
+
+```
+
+
+#Multilayer Perceptron on Contact Lens data
+
+We will now create a multilayer perceptron network for the contact lens data.
+
+First create the Multilayer percetron weka classifier and two empty vectors to hold the values for epochs and accuracies through different runs.
+
+```{r}
+weka_mlp <- make_Weka_classifier("weka/classifiers/functions/MultilayerPerceptron")
+
+epochs <- c()
+accuracies <- c()
+```
+
+Now iterate through different a fixed set of epochs (5-500 in steps of 5) to get accuracy values. We collect the values in the empty vectors created above and then plot them.
+
+```{r}
+# multilayer perceptron classifier
+for(i in 1:100) # do 100 iterations
+{
+  epochs <- append(epochs, 5  *i) # accumulate the epoch number over a vector for plotting
+  lenses_mlp_a <- weka_mlp(class~., # class is the network output
+                           data=lenses, # data comes from the lenses data frame
+                           control=c("-L", 0.3, # learning rate
+                                     "-M", 0.2, # momentum
+                                     "-N", 5 * i, # number of epochs, changes through iterations
+                                     "-V", 0, # validation set size
+                                     "-S", 0, # seed number
+                                     "-E", 20, # validation threshold
+                                     "-H", "a" # hidden layers
+                                     ))
+  accuracies <- append (accuracies, evaluate_Weka_classifier(lenses_mlp_a, numFolds = 10, class=TRUE)$details['pctCorrect'] / 100) # accumulate the accuracy over a vector for plotting
+}
+nn.epochs.comparison <- data.frame(Epochs=epochs,Accuracy=accuracies) # create data frame of epochs vs accuracies
+ggplot(nn.epochs.comparison, aes(Epochs, Accuracy)) + # plot epochs vs accuracies
+  geom_smooth() + # smooth the values
+  ggtitle("Accuracy vs Number of Epochs\nfor One Hidden Layer Perceptron\non Contact Lenses Data") #add title
+
+
+#two hidden layers, two units each
+rm(epochs); rm(accuracies); epochs <- c(); accuracies <- c();
+for(i in 1:10) # do 100 iterations
+{
+  epochs <- append(epochs, 5000 * i) 
+  lenses_mlp_a <- weka_mlp(class~., data=lenses, control=c("-L", 0.3, "-M", 0.2, "-N", 5000 * i, "-V", 0, "-S", 0, "-E", 20, "-H", "a,2,2" ))
+  accuracies <- append (accuracies, evaluate_Weka_classifier(lenses_mlp_a, numFolds = 10, class=TRUE)$details['pctCorrect'] / 100) 
+}
+nn.epochs.comparison <- data.frame(Epochs=epochs,Accuracy=accuracies) 
+ggplot(nn.epochs.comparison, aes(Epochs, Accuracy)) + geom_smooth() + ggtitle("Accuracy vs Number of Epochs\nfor 2 Hidden Layer Perceptron - 2 units each\non ContactLenses Data") 
+
+```
+
+#Multilayer Perceptron on Iris data
+
+We will now create a multilayer perceptron network for the Iris data.
+
+```{r}
+#multilayer perceptron classifier 
+rm(epochs); rm(accuracies); epochs <- c(); accuracies <- c(); rm(nn.epochs.comparison);
+weka_mlp <- make_Weka_classifier("weka/classifiers/functions/MultilayerPerceptron")
+
+# one hidden layer
+for(i in 1:100)
+{
+  epochs <- append(epochs, 5  * i) 
+  iris_mlp_a <- weka_mlp(class~., data=iris, control=c("-L", 0.3, "-M", 0.2, "-N", 5 * i, "-V", 0, "-S", 0, "-E", 20, "-H", "a" ))
+  accuracies <- append (accuracies, evaluate_Weka_classifier(iris_mlp_a, numFolds = 10, class=TRUE)$details['pctCorrect'] / 100) 
+}
+nn.epochs.comparison <- data.frame(Epochs=epochs,Accuracy=accuracies) 
+ggplot(nn.epochs.comparison, aes(Epochs, Accuracy)) + geom_smooth() + ggtitle("Accuracy vs Number of Epochs\nfor One Hidden Layer Perceptron\non Iris Data")
+
+# two hidden layers, two units each
+rm(epochs); rm(accuracies); epochs <- c(); accuracies <- c();
+for(i in 1:100)
+{
+  epochs <- append(epochs, 5 * i) 
+  iris_mlp_a <- weka_mlp(class~., data=iris, control=c("-L", 0.3, "-M", 0.2, "-N", 5000 * i, "-V", 0, "-S", 0, "-E", 20, "-H", "a,2,2" ))
+  accuracies <- append (accuracies, evaluate_Weka_classifier(iris_mlp_a, numFolds = 10, class=TRUE)$details['pctCorrect'] / 100) 
+}
+nn.epochs.comparison <- data.frame(Epochs=epochs,Accuracy=accuracies) 
+ggplot(nn.epochs.comparison, aes(Epochs, Accuracy)) + geom_smooth() + ggtitle("Accuracy vs Number of Epochs\nfor 2 Hidden Layer Perceptron - 2 units each\non Iris Data") 
+
+```
